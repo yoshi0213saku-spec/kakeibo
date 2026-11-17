@@ -275,6 +275,21 @@ input::placeholder{color:#777}
 .sr-chips button.on{border-color:var(--red);color:var(--red);font-weight:600}
 .sr-summary{display:flex;gap:16px;flex-wrap:wrap;padding:10px 18px;font-size:16px;border-bottom:1px solid var(--line)}
 .sr-summary:empty{display:none}
+.ms-row{display:grid;grid-template-columns:70px 1fr auto;align-items:center;gap:10px;width:100%;padding:14px 16px;border:0;border-bottom:1px solid var(--line);background:var(--bg);color:#fff;font:inherit;text-align:left;cursor:pointer}
+.ms-row:active{background:#2e3137}
+.ms-month{font-size:19px;font-weight:700}
+.ms-inc{text-align:right;font-size:17px;white-space:nowrap}
+.ms-right{display:flex;flex-direction:column;align-items:flex-end;gap:3px;white-space:nowrap;min-width:110px}
+.ms-right span{font-size:17px}.ms-right small{font-size:14px;color:#aeb0b7}
+.st-head{display:flex;justify-content:space-between;align-items:center;padding:20px 18px 10px;gap:10px}
+.st-title{display:flex;align-items:center;gap:10px;font-size:20px;font-weight:600}
+.st-title svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.st-period{color:#aeb0b7;font-size:15px;white-space:nowrap}
+.st-box{margin:0 16px;border:1px solid #4a4e57;border-radius:12px;padding:8px 18px}
+.st-line{display:flex;justify-content:space-between;gap:12px;padding:9px 0;font-size:16px}
+.st-line span{color:#c8cad0;min-width:0}.st-line b{font-weight:500;white-space:nowrap}
+.st-excel{display:flex;align-items:center;justify-content:center;gap:10px;width:calc(100% - 32px);margin:18px 16px 30px;padding:14px;border:1px solid #4a4e57;border-radius:12px;background:transparent;color:#fff;font-size:17px;cursor:pointer}
+.st-excel .xl-ico{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border:1.5px solid #2fa36b;border-radius:4px;color:#2fa36b;font-size:14px;font-weight:700}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
@@ -637,6 +652,7 @@ function refreshView(){
  if($('dayDetailBackdrop').classList.contains('open')&&openDetailDate)showDayDetails(openDetailDate);
 }
 function render(){
+ if(view==='monthly'&&store.mode!=='loading'){renderMonthly($('entries'));return}
  $('monthLabel').textContent=month.getFullYear()+'年 '+(month.getMonth()+1)+'月';
  const key=curKey();
  const rows=records.filter(r=>monthKey(r.date)===key);
@@ -647,7 +663,8 @@ function render(){
  if(store.mode==='loading'){host.innerHTML='<div class="empty">明細を読み込んでいます…</div>';return}
  if(view==='daily'){renderCalendar(host,key,rows);return}
  if(view==='monthly'||view==='settle'||view==='memo'){
-  host.innerHTML='<div class="empty">'+(view==='monthly'?'月別の集計表示は次の段階で充実させます。':view==='settle'?'決算・年間集計は次の段階で追加します。':'メモ機能は次の段階で追加します。')+'</div>';return;
+  if(view==='settle'){renderSettle(host,key,rows);return}
+  host.innerHTML='<div class="empty">メモ機能は次の段階で追加します。</div>';return;
  }
  let sorted=rows.slice().sort((a,b)=>b.date.localeCompare(a.date));
  const today=localDateKey();
@@ -1304,6 +1321,51 @@ $('srClear').addEventListener('click',()=>{$('srInput').value='';renderSearch();
 document.querySelectorAll('#srKinds button').forEach(b=>b.addEventListener('click',()=>{srKind=b.dataset.k;renderSearch()}));
 document.querySelectorAll('#srPeriods button').forEach(b=>b.addEventListener('click',()=>{srPeriod=b.dataset.p;renderSearch()}));
 
+/* ---------- 月別・決算 ---------- */
+function sumType(rs,t){return rs.filter(r=>r.type===t).reduce((a,r)=>a+r.amount,0)}
+function setTab(v){view=v;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.view===v))}
+function renderMonthly(host){
+ const y=month.getFullYear(),now=new Date();
+ $('monthLabel').textContent=y+'年';
+ const yr=records.filter(r=>r.date.startsWith(String(y)));
+ const inc=sumType(yr,'income'),exp=sumType(yr,'expense');
+ $('incomeTotal').textContent=yen(inc);$('expenseTotal').textContent=yen(exp);$('balanceTotal').textContent=yen(inc-exp);
+ const last=y<now.getFullYear()?12:y>now.getFullYear()?0:now.getMonth()+1;
+ let html='';
+ for(let m=last;m>=1;m--){
+  const k=`${y}-${String(m).padStart(2,'0')}`,rs=yr.filter(r=>monthKey(r.date)===k);
+  const i=sumType(rs,'income'),e=sumType(rs,'expense');
+  html+=`<button type="button" class="ms-row" data-m="${m}"><span class="ms-month">${m}月</span><span class="ms-inc income">${yen(i)}</span><span class="ms-right"><span class="expense">${yen(e)}</span><small>${yen(i-e)}</small></span></button>`;
+ }
+ host.innerHTML=html||'<div class="empty">この年の明細はまだありません。</div>';
+ host.querySelectorAll('.ms-row').forEach(b=>b.addEventListener('click',()=>{month=new Date(y,Number(b.dataset.m)-1,1);setTab('day');render();window.scrollTo(0,0)}));
+}
+function renderSettle(host,key,rows){
+ const y=month.getFullYear(),mo=month.getMonth();
+ const prev=new Date(y,mo-1,1),pk=`${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,'0')}`;
+ const pexp=sumType(records.filter(r=>monthKey(r.date)===pk),'expense'),exp=sumType(rows,'expense');
+ const isCard=a=>assetGroup(a)==='カード';
+ const cashExp=rows.filter(r=>r.type==='expense'&&!isCard(r.asset)).reduce((a,r)=>a+r.amount,0);
+ const cardExp=rows.filter(r=>r.type==='expense'&&isCard(r.asset)).reduce((a,r)=>a+r.amount,0);
+ const trans=rows.filter(r=>r.type==='transfer'&&!isCard(r.asset)).reduce((a,r)=>a+r.amount,0);
+ const last=new Date(y,mo+1,0).getDate(),mm=String(mo+1).padStart(2,'0');
+ const ratio=pexp?Math.round(exp/pexp*100)+'%':'－';
+ // 分類ごとの上位
+ const g={};rows.filter(r=>r.type==='expense').forEach(r=>{const c=canonicalCategory(r.category);g[c]=(g[c]||0)+r.amount});
+ const top=Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,5);
+ host.innerHTML=`<div class="st-head"><span class="st-title">${ICON_COINS}資産</span><span class="st-period">${y}.${mm}.01 ～ ${mm}.${last}</span></div>
+ <div class="st-box">
+  <div class="st-line"><span>前月対比支出（今月/前月）</span><b>${ratio}</b></div>
+  <div class="st-line"><span>支出（現金, 銀行）</span><b>${yen(cashExp)}</b></div>
+  <div class="st-line"><span>支出（カード）</span><b>${yen(cardExp)}</b></div>
+  <div class="st-line"><span>振替（現金, 銀行→）</span><b>${yen(trans)}</b></div>
+ </div>
+ ${top.length?`<div class="st-head"><span class="st-title">支出の多い分類</span></div><div class="st-box">${top.map(([n,v])=>`<div class="st-line"><span>${esc(n)}</span><b>${yen(v)}</b></div>`).join('')}</div>`:''}
+ <button type="button" class="st-excel" id="stExcel"><span class="xl-ico">X</span>この月をExcelファイルに書き出す</button>`;
+ $('stExcel').addEventListener('click',()=>{openSettings('data');$('xlPeriod').value='month';renderXl();setTimeout(()=>$('xlPeriod').scrollIntoView({block:'center'}),50)});
+}
+const ICON_COINS='<svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="6.5" rx="7" ry="2.5"/><path d="M5 6.5v4c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-4"/><path d="M5 10.5v4c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-4"/><path d="M5 14.5v3c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-3"/></svg>';
+
 /* ---------- 資産と残高 ---------- */
 let balances={};
 let assetTarget='asset';
@@ -1574,8 +1636,8 @@ $('importFile').addEventListener('change',async e=>{
 });
 
 /* ---------- 月の切り替え・タブ ---------- */
-$('prevMonth').onclick=()=>{month.setMonth(month.getMonth()-1);if(mainSection==='stats')renderStats();else render()};
-$('nextMonth').onclick=()=>{month.setMonth(month.getMonth()+1);if(mainSection==='stats')renderStats();else render()};
+$('prevMonth').onclick=()=>{if(mainSection==='ledger'&&view==='monthly')month.setFullYear(month.getFullYear()-1);else month.setMonth(month.getMonth()-1);if(mainSection==='stats')renderStats();else render()};
+$('nextMonth').onclick=()=>{if(mainSection==='ledger'&&view==='monthly')month.setFullYear(month.getFullYear()+1);else month.setMonth(month.getMonth()+1);if(mainSection==='stats')renderStats();else render()};
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{view=t.dataset.view;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===t));render()});
 
 showMainSection('home');
